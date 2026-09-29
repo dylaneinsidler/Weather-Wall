@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Radar</title>
+<script src="config.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #2b2d31;
+    --panel: rgba(20, 22, 26, .78);
+    --line: rgba(255, 255, 255, .1);
+    --text: #f1f3f5;
+    --muted: #a3aab3;
+    --accent: #ffffff;
+    --live: #7ee2a8;
+    --warn: #f5a524;
+  }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  }
+  #map { position: absolute; inset: 0; background: var(--bg); }
+
+  /* Windy-style map: flat mid-gray land, darker sea. */
+  .basemap { filter: brightness(2.1) saturate(0) contrast(.9); }
+  /* Soft edges on the rain, and a gentle cross-fade between frames. */
+  .leaflet-radar-pane { filter: blur(1.4px); }
+  .radar-frame { transition: opacity .7s ease-in-out; }
+
+  .panel {
+    position: absolute; z-index: 1000;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    backdrop-filter: blur(10px); padding: 18px 24px;
+  }
+  .eyebrow { font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+  #title { top: 28px; left: 28px; min-width: 260px; }
+  #frameTime { font-size: 46px; font-weight: 600; line-height: 1.1; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  #frameAge { font-size: 18px; color: var(--muted); margin-top: 2px; }
+  #frameAge.live { color: var(--live); }
+  #status { font-size: 15px; color: var(--warn); margin-top: 8px; }
+  #status:empty { display: none; }
+
+  #clock { top: 28px; right: 28px; text-align: right; }
+  #clockTime { font-size: 58px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+  #clockDate { font-size: 18px; color: var(--muted); margin-top: 8px; }
+
+  #bottom { left: 28px; right: 28px; bottom: 34px; display: flex; align-items: center; gap: 32px; }
+  #timeline { flex: 1; position: relative; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .14); }
+  #progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); }
+  #legend { width: 380px; }
+  #ramp { height: 10px; border-radius: 5px; margin-top: 8px; }
+  .labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  .leaflet-control-attribution { background: rgba(0, 0, 0, .35) !important; color: #9aa1a9 !important; font-size: 10px; }
+  .leaflet-control-attribution a { color: #c3c8ce !important; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="title" class="panel">
+  <div class="eyebrow" id="radarTitle"></div>
+  <div id="frameTime">--:--</div>
+  <div id="frameAge">Loading…</div>
+  <div id="status"></div>
+</div>
+
+<div id="clock" class="panel">
+  <div id="clockTime">--:--</div>
+  <div id="clockDate"></div>
+</div>
+
+<div id="bottom" class="panel">
+  <div id="timeline"><div id="progress"></div></div>
+  <div id="legend">
+    <div class="eyebrow">Rain intensity</div>
+    <div id="ramp"></div>
+    <div class="labels"><span>Light</span><span>Moderate</span><span>Heavy</span><span>Severe</span></div>
+  </div>
+</div>
+
+<script>
+  const CONFIG = window.WEATHER_WALL;                // from config.js
+  const HOME = [CONFIG.lat, CONFIG.lon];
+  const VIEW = CONFIG.radarView;
+  document.title = CONFIG.radarTitle;
+  document.getElementById('radarTitle').textContent = CONFIG.radarTitle;
+
+  const HISTORY_MIN = 60, STEP_MIN = 5;              // loop the last hour, one frame per 5 minutes
+  const FRAME_MS = 650, HOLD_LAST_MS = 2600;
+  const RADAR_INFO = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/USCOMP/n0q_0.json';
+  const RADAR_TILES = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-{stamp}/{z}/{x}/{y}.png';
+
+  // --- Recoloring --------------------------------------------------------
+  // The NWS composite comes as a 256-color image where color #i means i*0.5 - 32.5 dBZ.
+  // Each pixel is looked up by color and repainted on a smooth Windy-like ramp.
+  const N0Q_PALETTE = '000000,85718f,85728f,86738d,87758b,87768b,887789,897987,897a87,8a7b85,8b7d84,8b7e84,8c7f82,8d8180,8d8280,8e837e,8f847c,8f857c,90877b,918879,918979,928b77,938d75,969153,989457,9b975b,9d9a60,a09d64,a3a068,a5a36d,a8a671,aaa976,adac7a,b0af7e,b2b283,b7b88c,babb90,bdbe94,bfc199,c2c49d,c4c7a2,c7caa6,cacdaa,ccd0af,d2d4b4,cfd2b4,c9ccb4,c6c9b4,c3c7b4,c0c4b4,bdc1b4,b9beb4,b6bbb4,b3b9b4,b0b6b4,adb3b4,aab0b4,a4abb4,a0a8b4,9da5b4,9aa2b4,97a0b4,949db4,919ab4,949bb5,9098b4,8c95b3,8892b2,808cb0,7c89af,7886ae,7483ac,7080ab,6c7daa,6779a9,6376a8,5f73a7,5b70a6,576da4,4f67a2,4b64a1,4761a0,435e9f,415b9e,4361a2,4568a6,486faa,4a76ae,4d7db2,4f84b6,518bbb,5699c3,599fc7,5ba6cb,5eadcf,60b4d4,62bbd8,65c2dc,67c9e0,6ad0e4,6fd6e8,68d6d7,59d6b3,52d6a2,4bd690,43d67e,3cd66d,35d65b,11d518,11d117,10cd17,10c816,10c416,0fbc15,0fb714,0eb314,0eaf13,0eab13,0da612,0da212,0d9e11,0c9911,0c9510,0c9110,0b880f,0b840e,0a800e,0a7c0d,0a770d,09730c,096f0c,096b0b,08660b,08620a,095e09,327308,467d08,5b8807,6f9207,849d06,98a806,adb205,c1bd05,d6c704,ead204,ffe200,ffd800,ffd300,ffce00,ffc900,ffc400,ffc000,ffbb00,ffb600,ffb100,ffac00,ffa700,ffa200,ff9900,ff9400,ff8f00,ff8a00,ff8500,ff8000,ff0000,f80000,f10000,ea0000,e30000,d50000,cd0000,c60000,bf0000,b80000,b10000,aa0000,a30000,9b0000,940000,8d0000,7f0000,780000,710000,ffffff,fff5ff,ffeaff,ffdfff,ffd4ff,ffc9ff,ffbeff,ffb3ff,ff9dff,ff92ff,ff75ff,fc6bfd,f960fa,f656f7,f34bf4,f040f1,ed36ef,ea2bec,e720e9,e10be3,b200ff,ac00fc,a400f7,9b00f4,9300ef,8800ea,8300e8,7900e2,7200dd,6900db';
+
+  // [dBZ, r, g, b, alpha] — purple drizzle through blue, green, yellow, red, magenta.
+  // Below ~15 dBZ is mostly ground clutter and bugs at night, so it fades out.
+  const RAMP = [
+    [14, 110, 80, 180, 0],
+    [18, 110, 80, 180, .5],
+    [23, 70, 110, 215, .75],
+    [28, 45, 165, 225, .85],
+    [33, 55, 200, 120, .9],
+    [38, 180, 220, 60, .95],
+    [43, 250, 210, 50, 1],
+    [48, 250, 140, 40, 1],
+    [53, 235, 55, 55, 1],
+    [60, 205, 40, 150, 1],
+    [68, 245, 210, 255, 1],
+  ];
+
+  function rampColor(dbz) {
+    if (dbz <= RAMP[0][0]) return null;
+    const last = RAMP[RAMP.length - 1];
+    if (dbz >= last[0]) return [last[1], last[2], last[3], Math.round(last[4] * 255)];
+    const j = RAMP.findIndex(s => s[0] >= dbz);
+    const [d0, ...a] = RAMP[j - 1], [d1, ...b] = RAMP[j];
+    const t = (dbz - d0) / (d1 - d0);
+    const c = a.map((v, k) => v + (b[k] - v) * t);
+    return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), Math.round(c[3] * 255)];
+  }
+
+  // Source color (0xRRGGBB) -> new RGBA
+  const RECOLOR = new Map();
+  N0Q_PALETTE.split(',').forEach((hex, i) => {
+    const c = i > 0 && rampColor(i * 0.5 - 32.5);
+    if (c && !RECOLOR.has(parseInt(hex, 16))) RECOLOR.set(parseInt(hex, 16), c);
+  });
+
+  document.getElementById('ramp').style.background = 'linear-gradient(90deg,' +
+    RAMP.slice(1).map(s => `rgb(${s[1]},${s[2]},${s[3]})`).join(',') + ')';
+
+  const RadarFrame = L.GridLayer.extend({
+    createTile(coords, done) {
+      const tile = document.createElement('canvas');
+      tile.width = tile.height = 256;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const ctx = tile.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const image = ctx.getImageData(0, 0, 256, 256), px = image.data;
+        for (let p = 0; p < px.length; p += 4) {
+          if (!px[p + 3]) continue;
+          const c = RECOLOR.get((px[p] << 16) | (px[p + 1] << 8) | px[p + 2]);
+          if (c) { px[p] = c[0]; px[p + 1] = c[1]; px[p + 2] = c[2]; px[p + 3] = c[3]; }
+          else px[p + 3] = 0;
+        }
+        ctx.putImageData(image, 0, 0);
+        done(null, tile);
+      };
+      img.onerror = () => done(null, tile);
+      img.src = L.Util.template(RADAR_TILES, { stamp: this.options.stamp, ...coords });
+      return tile;
+    }
+  });
+
+  // --- Map ---------------------------------------------------------------
+  const map = L.map('map', { zoomControl: false, zoomSnap: 0.25, fadeAnimation: false });
+  const fit = () => { map.invalidateSize(); map.fitBounds(VIEW); };
+  fit();
+  // The window starts small and then goes full screen; re-frame when it does.
+  window.addEventListener('resize', () => { clearTimeout(fit.t); fit.t = setTimeout(fit, 200); });
+
+  const ESRI = 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas';
+  L.tileLayer(`${ESRI}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+    className: 'basemap', maxNativeZoom: 16, attribution: 'Basemap &copy; Esri'
+  }).addTo(map);
+
+  map.createPane('radar').style.zIndex = 400;
+  map.getPane('radar').classList.add('leaflet-radar-pane');
+
+  // City names sit above the radar so they stay readable in heavy rain.
+  map.createPane('labels');
+  map.getPane('labels').style.zIndex = 650;
+  map.getPane('labels').style.pointerEvents = 'none';
+  L.tileLayer(`${ESRI}/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, {
+    maxNativeZoom: 16, pane: 'labels'
+  }).addTo(map);
+  L.circleMarker(HOME, { radius: 7, color: '#fff', weight: 2.5, fillColor: '#1d2126', fillOpacity: 1, pane: 'labels' }).addTo(map);
+  map.attributionControl.addAttribution('Radar: NWS NEXRAD via Iowa Environmental Mesonet');
+
+  // --- Animation ---------------------------------------------------------
+  // frames: [{ time, layer }] oldest first. When a new scan arrives only that
+  // frame is downloaded; the oldest one is dropped.
+  let frames = [];
+  let frame = 0;
+
+  const utcStamp = d => d.toISOString().slice(0, 16).replace(/[-T:]/g, '');
+  const fmtTime = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  function addFrame(time) {
+    const layer = new RadarFrame({ stamp: utcStamp(time), pane: 'radar', className: 'radar-frame', opacity: 0 }).addTo(map);
+    return { time, layer };
+  }
+
+  function syncFrames(latest) {
+    const wanted = [];
+    for (let m = HISTORY_MIN; m >= 0; m -= STEP_MIN) wanted.push(latest - m * 60000);
+    const keep = frames.filter(f => wanted.includes(+f.time));
+    frames.filter(f => !keep.includes(f)).forEach(f => map.removeLayer(f.layer));
+    frames = wanted.map(t => keep.find(f => +f.time === t) || addFrame(new Date(t)));
+    frame = Math.min(frame, frames.length - 1);
+  }
+
+  function showFrame(i) {
+    frames.forEach((f, j) => f.layer.setOpacity(j === i ? 0.9 : 0));
+    const f = frames[i];
+    const latest = frames[frames.length - 1].time;
+    const mins = Math.round((latest - f.time) / 60000);
+    document.getElementById('frameTime').textContent = fmtTime(f.time);
+    const age = document.getElementById('frameAge');
+    age.textContent = mins ? `${mins} min before latest` : 'Latest scan';
+    age.className = mins ? '' : 'live';
+    document.getElementById('progress').style.width = `${(i / (frames.length - 1)) * 100}%`;
+  }
+
+  function step() {
+    if (frames.length) {
+      showFrame(frame);
+      const hold = frame === frames.length - 1 ? HOLD_LAST_MS : FRAME_MS;
+      frame = (frame + 1) % frames.length;
+      setTimeout(step, hold);
+    } else {
+      setTimeout(step, 500);
+    }
+  }
+
+  const status = msg => document.getElementById('status').textContent = msg;
+
+  async function refresh() {
+    try {
+      const r = await fetch(RADAR_INFO, { cache: 'no-store' });
+      const latest = new Date((await r.json()).meta.valid);
+      syncFrames(latest);
+      const minutesOld = (Date.now() - latest) / 60000;
+      status(minutesOld > 30 ? `Radar data is ${Math.round(minutesOld)} min old` : '');
+    } catch (e) {
+      status('Can’t reach the radar service — retrying');
+    }
+  }
+
+  function tickClock() {
+    const now = new Date();
+    document.getElementById('clockTime').textContent = fmtTime(now);
+    document.getElementById('clockDate').textContent =
+      now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+
+  tickClock();
+  setInterval(tickClock, 1000);
+  refresh();
+  setInterval(refresh, 2 * 60 * 1000);
+  step();
+  // A fresh start every 6 hours keeps a window that's left open all day healthy.
+  setTimeout(() => location.reload(), 6 * 60 * 60 * 1000);
+</script>
+</body>
+</html>

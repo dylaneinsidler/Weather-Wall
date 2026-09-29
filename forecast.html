@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Forecast</title>
+<script src="config.js"></script>
+<style>
+  :root {
+    --bg: #0a0e13;
+    --card: #121922;
+    --line: rgba(255, 255, 255, .07);
+    --text: #e8edf3;
+    --muted: #8b97a6;
+    --faint: #5b6674;
+    --rain: #3f9be6;
+    --warn: #f5a524;
+    --danger: #f0524f;
+  }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  }
+  body { display: flex; flex-direction: column; gap: 22px; padding: 34px 44px 26px; box-sizing: border-box; }
+  .eyebrow { font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px 30px; box-sizing: border-box; }
+
+  header { display: flex; justify-content: space-between; align-items: flex-end; }
+  .place { font-size: 46px; font-weight: 600; line-height: 1.1; }
+  #updated { font-size: 17px; color: var(--muted); margin-top: 6px; }
+  #updated.stale { color: var(--warn); }
+  #clockTime { font-size: 64px; font-weight: 600; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
+  #clockDate { font-size: 18px; color: var(--muted); margin-top: 8px; text-align: right; }
+
+  #alerts { display: flex; flex-direction: column; gap: 10px; }
+  #alerts:empty { display: none; }
+  .alert { display: flex; gap: 14px; align-items: baseline; font-size: 20px; padding: 13px 20px; border-radius: 12px;
+    background: rgba(245, 165, 36, .1); border: 1px solid rgba(245, 165, 36, .45); }
+  .alert b { color: var(--warn); font-weight: 600; }
+  .alert span { color: var(--muted); }
+  .alert.severe { background: rgba(240, 82, 79, .12); border-color: rgba(240, 82, 79, .55); }
+  .alert.severe b { color: var(--danger); }
+
+  .top { flex: 1; min-height: 0; display: grid; grid-template-columns: 440px 1fr; gap: 22px; }
+
+  .now { display: flex; flex-direction: column; justify-content: space-between; }
+  .now-main { display: flex; align-items: center; gap: 18px; }
+  #nowTemp { font-size: 140px; font-weight: 300; line-height: 1; letter-spacing: -.04em; }
+  #nowIcon { font-size: 84px; }
+  #nowDesc { font-size: 28px; font-weight: 600; }
+  .stats { display: flex; justify-content: space-between; gap: 16px; }
+  .stat .v { font-size: 25px; font-weight: 600; margin-top: 4px; white-space: nowrap; }
+
+  .today { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding-bottom: 16px; }
+  #todayText { font-size: 19px; line-height: 1.4; }
+  .today h3 { margin: 0 0 4px; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+
+  /* Rain chance by hour: one row per day, hours lined up in columns. */
+  .rain { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #rainRows { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  .rrow, .rhours { display: grid; grid-template-columns: 64px repeat(24, 1fr); gap: 3px; }
+  .rrow { flex: 1; min-height: 0; }
+  .rlabel { align-self: center; font-size: 17px; font-weight: 600; line-height: 1.1; }
+  .rlabel small { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+  .rcell { display: flex; flex-direction: column; min-height: 0; }
+  .rcell .p { font-size: 11px; color: var(--rain); text-align: center; height: 14px; font-variant-numeric: tabular-nums; }
+  .rcell .p.low { color: var(--faint); }
+  .rcell .well { flex: 1; border-radius: 4px; background: rgba(255, 255, 255, .05); display: flex; align-items: flex-end; overflow: hidden; }
+  .rcell .fill { width: 100%; background: var(--rain); }
+  .rcell.past .well { background: transparent; }
+  .rcell.now .well { outline: 2px solid var(--text); outline-offset: 1px; }
+  .rhours { margin-top: 5px; font-size: 11px; color: var(--faint); text-align: center; }
+
+  #days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 16px; flex: none; }
+  .day { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 14px 14px 0; overflow: hidden; }
+  .day .name { font-size: 22px; font-weight: 600; }
+  .day .date { font-size: 13px; color: var(--muted); margin-top: 1px; }
+  .day .icon { font-size: 44px; line-height: 1.1; margin: 4px 0 2px; }
+  .day .temps { font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .day .temps .lo { font-size: 24px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+  .day .desc { font-size: 14px; color: var(--muted); margin-top: 4px; line-height: 1.3; min-height: 36px; }
+  .day .pop { font-size: 16px; color: var(--rain); font-weight: 600; margin: 4px 0 10px; }
+  .day .popbar { align-self: stretch; margin: 0 -14px; height: 5px; background: rgba(255, 255, 255, .05); }
+  .day .popbar div { height: 100%; background: var(--rain); }
+
+  footer { font-size: 13px; color: var(--faint); display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="place" id="place"></div>
+    <div id="updated">Loading forecast…</div>
+  </div>
+  <div>
+    <div id="clockTime">--:--</div>
+    <div id="clockDate"></div>
+  </div>
+</header>
+
+<div id="alerts"></div>
+
+<div class="top">
+  <div class="card now">
+    <div class="eyebrow">Right now</div>
+    <div>
+      <div class="now-main"><div id="nowTemp">--°</div><div id="nowIcon"></div></div>
+      <div id="nowDesc"></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="eyebrow">Feels like</div><div class="v" id="nowFeels">--</div></div>
+      <div class="stat"><div class="eyebrow">Humidity</div><div class="v" id="nowHum">--</div></div>
+      <div class="stat"><div class="eyebrow">Wind</div><div class="v" id="nowWind">--</div></div>
+    </div>
+  </div>
+
+  <div class="card today">
+    <div><h3 id="todayName">Today</h3><div id="todayText"></div></div>
+    <div class="rain">
+      <h3>Chance of rain by hour</h3>
+      <div id="rainRows"></div>
+      <div class="rhours" id="rainHours"></div>
+    </div>
+  </div>
+</div>
+
+<div id="days"></div>
+
+<footer><span>Data: National Weather Service</span><span>Press Esc to close</span></footer>
+
+<script>
+  const { lat: LAT, lon: LON, place: PLACE } = window.WEATHER_WALL;  // from config.js
+  const API = 'https://api.weather.gov';
+
+  const $ = id => document.getElementById(id);
+  document.title = `${PLACE} Forecast`;
+  $('place').textContent = PLACE;
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const fmtTime = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  function icon(text, isDay) {
+    const t = (text || '').toLowerCase();
+    if (/hurricane|tropical storm/.test(t)) return '🌀';
+    if (/thunder|t-storm/.test(t)) return '⛈️';
+    if (/rain|shower|drizzle/.test(t)) return isDay && /chance|slight|isolated|scattered/.test(t) ? '🌦️' : '🌧️';
+    if (/fog|haze|smoke/.test(t)) return '🌫️';
+    if (/mostly cloudy|overcast/.test(t) || /^cloudy/.test(t)) return isDay ? '🌥️' : '☁️';
+    if (/partly/.test(t)) return isDay ? '⛅' : '🌙';
+    if (/mostly sunny/.test(t)) return '🌤️';
+    if (/sunny|clear|fair/.test(t)) return isDay ? '☀️' : '🌙';
+    if (/wind|breezy|blustery/.test(t)) return '💨';
+    return isDay ? '⛅' : '🌙';
+  }
+
+  async function get(url) {
+    const r = await fetch(url, { headers: { Accept: 'application/geo+json' }, cache: 'no-store' });
+    if (!r.ok) throw new Error(`${r.status} ${url}`);
+    return r.json();
+  }
+
+  function renderDays(periods, hourly) {
+    // A day's rain chance is its highest hourly chance from now on, so the cards match the
+    // hourly rows. (The NWS "Wednesday Night" figure runs into Thursday morning.)
+    const hourlyMax = new Map();
+    for (const p of hourly || []) {
+      if (new Date(p.endTime) <= new Date()) continue;
+      const key = p.startTime.slice(0, 10), pop = p.probabilityOfPrecipitation?.value ?? 0;
+      hourlyMax.set(key, Math.max(hourlyMax.get(key) ?? 0, pop));
+    }
+    const days = new Map();
+    for (const p of periods) {
+      const key = p.startTime.slice(0, 10);
+      if (!days.has(key)) days.set(key, { key });
+      days.get(key)[p.isDaytime ? 'day' : 'night'] = p;
+    }
+    const today = dateKey(new Date());
+    $('days').innerHTML = [...days.values()].slice(0, 7).map(d => {
+      const main = d.day || d.night;
+      const date = new Date(d.key + 'T12:00:00');
+      const name = d.key === today ? (d.day ? 'Today' : 'Tonight') : date.toLocaleDateString([], { weekday: 'short' });
+      const pop = hourlyMax.get(d.key) ?? (d.day || d.night).probabilityOfPrecipitation?.value ?? 0;
+      const hi = d.day ? `${d.day.temperature}°` : '';
+      const lo = d.night ? `<span class="lo">${d.night.temperature}°</span>` : '';
+      return `<div class="card day">
+        <div class="name">${name}</div>
+        <div class="date">${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>
+        <div class="icon">${icon(main.shortForecast, !!d.day)}</div>
+        <div class="temps">${hi}${lo}</div>
+        <div class="desc">${esc(main.shortForecast)}</div>
+        <div class="pop">${pop ? `💧 ${pop}%` : '&nbsp;'}</div>
+        <div class="popbar"><div style="width:${pop}%"></div></div>
+      </div>`;
+    }).join('');
+
+    $('todayName').textContent = periods[0].name;
+    $('todayText').textContent = periods[0].detailedForecast;
+  }
+
+  // Three calendar days of hourly rain chance. Late in the evening, start with tomorrow.
+  function renderHourly(periods) {
+    const byHour = new Map(periods.map(p => [p.startTime.slice(0, 13), p.probabilityOfPrecipitation?.value ?? 0]));
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (now.getHours() >= 20 ? 1 : 0));
+    const nowKey = `${dateKey(now)}T${String(now.getHours()).padStart(2, '0')}`;
+    const label = h => h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
+
+    $('rainRows').innerHTML = [0, 1, 2].map(i => {
+      const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const key = dateKey(day);
+      const name = key === dateKey(now) ? 'Today' : day.toLocaleDateString([], { weekday: 'short' });
+      const cells = Array.from({ length: 24 }, (_, h) => {
+        const hourKey = `${key}T${String(h).padStart(2, '0')}`;
+        const pop = byHour.get(hourKey);
+        if (pop == null) return '<div class="rcell past"><div class="p"></div><div class="well"></div></div>';
+        return `<div class="rcell${hourKey === nowKey ? ' now' : ''}">
+          <div class="p${pop < 10 ? ' low' : ''}">${pop}</div>
+          <div class="well"><div class="fill" style="height:${pop}%;opacity:${0.35 + pop / 150}"></div></div>
+        </div>`;
+      }).join('');
+      return `<div class="rrow"><div class="rlabel">${name}<small>${day.toLocaleDateString([], { month: 'short', day: 'numeric' })}</small></div>${cells}</div>`;
+    }).join('');
+
+    $('rainHours').innerHTML = '<div></div>' + Array.from({ length: 24 }, (_, h) => `<div>${h % 3 === 0 ? label(h) : ''}</div>`).join('');
+  }
+
+  function renderNow(obs, hourly) {
+    const o = obs?.properties || {};
+    const c2f = c => c == null ? null : Math.round(c * 9 / 5 + 32);
+    const firstHour = hourly?.[0];
+    const temp = c2f(o.temperature?.value) ?? firstHour?.temperature;
+    const feels = c2f(o.heatIndex?.value) ?? c2f(o.windChill?.value) ?? temp;
+    const desc = o.textDescription || firstHour?.shortForecast || '';
+    const isDay = firstHour ? firstHour.isDaytime : true;
+    $('nowTemp').textContent = temp != null ? `${temp}°` : '--°';
+    $('nowIcon').textContent = icon(desc, isDay);
+    $('nowDesc').textContent = desc;
+    $('nowFeels').textContent = feels != null ? `${feels}°` : '--';
+    $('nowHum').textContent = o.relativeHumidity?.value != null ? `${Math.round(o.relativeHumidity.value)}%` : '--';
+    const kmh = o.windSpeed?.value, deg = o.windDirection?.value;
+    if (kmh != null) {
+      const mph = Math.round(kmh * 0.621371);
+      const dir = deg == null ? '' : ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8] + ' ';
+      $('nowWind').textContent = mph ? `${dir}${mph} mph` : 'Calm';
+    } else if (firstHour) {
+      $('nowWind').textContent = `${firstHour.windDirection} ${firstHour.windSpeed}`;
+    }
+  }
+
+  function renderAlerts(features) {
+    const seen = new Set();
+    $('alerts').innerHTML = features.filter(f => !seen.has(f.properties.event) && seen.add(f.properties.event)).map(f => {
+      const p = f.properties;
+      const end = p.ends || p.expires;
+      const until = end ? `until ${new Date(end).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : '';
+      const severe = p.severity === 'Severe' || p.severity === 'Extreme';
+      return `<div class="alert${severe ? ' severe' : ''}"><b>⚠ ${esc(p.event)}</b><span>${esc(until)}</span></div>`;
+    }).join('');
+  }
+
+  let grid = null, station = null, lastOk = null, hourlyCache = null;
+
+  async function load() {
+    try {
+      if (!grid) grid = (await get(`${API}/points/${LAT},${LON}`)).properties;
+      // "Right now" comes from the nearest weather station (usually the local airport).
+      if (!station) station = (await get(grid.observationStations)).features[0].properties.stationIdentifier;
+      const [fc, hr, obs, al] = await Promise.allSettled([
+        get(grid.forecast),
+        get(grid.forecastHourly),
+        get(`${API}/stations/${station}/observations/latest`),
+        get(`${API}/alerts/active?point=${LAT},${LON}`),
+      ]);
+      if (hr.status === 'fulfilled') { hourlyCache = hr.value.properties.periods; renderHourly(hourlyCache); }
+      if (fc.status === 'fulfilled') renderDays(fc.value.properties.periods, hourlyCache);
+      if (obs.status === 'fulfilled' || hourlyCache) renderNow(obs.value, hourlyCache);
+      if (al.status === 'fulfilled') renderAlerts(al.value.features);
+      if (fc.status === 'fulfilled') lastOk = new Date();
+    } catch (e) { /* keep showing the last good data */ }
+    const u = $('updated');
+    if (lastOk && Date.now() - lastOk < 45 * 60000) {
+      u.textContent = `Updated ${fmtTime(lastOk)}`;
+      u.className = '';
+    } else {
+      u.textContent = lastOk ? `Weather service not responding — last update ${fmtTime(lastOk)}` : 'Weather service not responding — retrying';
+      u.className = 'stale';
+    }
+  }
+
+  function tickClock() {
+    const now = new Date();
+    $('clockTime').textContent = fmtTime(now);
+    $('clockDate').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+
+  tickClock();
+  setInterval(tickClock, 1000);
+  load();
+  setInterval(load, 10 * 60 * 1000);
+  setTimeout(() => location.reload(), 6 * 60 * 60 * 1000);
+</script>
+</body>
+</html>
