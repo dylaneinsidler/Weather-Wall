@@ -126,7 +126,7 @@
 
 <div id="days"></div>
 
-<footer><span>Data: National Weather Service</span><span>Press Esc to close</span></footer>
+<footer><span>Data: National Weather Service</span><span>Click anywhere to close</span></footer>
 
 <script>
   const { lat: LAT, lon: LON, place: PLACE } = window.WEATHER_WALL;  // from config.js
@@ -293,7 +293,9 @@
     $('clockDate').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   }
 
+  // Click or Esc closes this window; the launcher then closes the other screen too.
   document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+  document.addEventListener('click', () => window.close());
 
   tickClock();
   setInterval(tickClock, 1000);

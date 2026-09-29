@@ -163,7 +163,11 @@
   });
 
   // --- Map ---------------------------------------------------------------
-  const map = L.map('map', { zoomControl: false, zoomSnap: 0.25, fadeAnimation: false });
+  // A display, not an interactive map: no panning or zooming, so a click just closes it.
+  const map = L.map('map', {
+    zoomControl: false, zoomSnap: 0.25, fadeAnimation: false,
+    dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false,
+  });
   const fit = () => { map.invalidateSize(); map.fitBounds(VIEW); };
   fit();
   // The window starts small and then goes full screen; re-frame when it does.
@@ -254,7 +258,9 @@
       now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   }
 
+  // Click or Esc closes this window; the launcher then closes the other screen too.
   document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+  document.addEventListener('click', () => window.close());
 
   tickClock();
   setInterval(tickClock, 1000);

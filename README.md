@@ -29,7 +29,7 @@ This adds a **Weather Wall** shortcut to your Desktop and a daily task that open
 ## Using it
 
 - **Open it any time:** double-click the Desktop shortcut.
-- **Close it:** press **Esc** on each screen, or wait for 10:30 AM.
+- **Close it:** click either screen (or press **Esc**) and both close. Or wait for 10:30 AM.
 - **Change the open time:** run `install.ps1` again with a new time, for example `.\install.ps1 -At '6:30 AM'`.
 - **Change the close time:** edit `$closeTime` at the top of `launch.ps1`.
 - **Remove it:** run `.\install.ps1 -Uninstall`.
